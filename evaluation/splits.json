@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "development": [
+    "RS-CAP-003",
+    "RS-CAP-005",
+    "RS-CAP-008",
+    "RS-CAP-016",
+    "RS-CAP-019"
+  ],
+  "holdout": [
+    "RS-CAP-001",
+    "RS-CAP-002",
+    "RS-CAP-004",
+    "RS-CAP-006",
+    "RS-CAP-007",
+    "RS-CAP-009",
+    "RS-CAP-010",
+    "RS-CAP-011",
+    "RS-CAP-012",
+    "RS-CAP-013",
+    "RS-CAP-014",
+    "RS-CAP-015",
+    "RS-CAP-017",
+    "RS-CAP-018",
+    "RS-CAP-020"
+  ],
+  "policy": "开发阶段只运行 development；路由版本冻结后，holdout 仅用于正式三组对比实验。"
+}
