@@ -2,6 +2,12 @@ export const runtime = "edge";
 
 type MapPlace = { name: string; city?: string };
 type LocatedPlace = MapPlace & { longitude: number; latitude: number };
+type Coordinate = [number, number];
+type RouteSegment = { points: Coordinate[]; actual: boolean };
+
+const MAP_WIDTH = 750;
+const MAP_HEIGHT = 300;
+const MAP_PADDING = 58;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -41,8 +47,6 @@ function parsePlaces(request: Request): MapPlace[] | null {
 }
 
 async function amapJson(url: URL) {
-  // High-de calls can occasionally time out or hit a transient QPS limit.
-  // Retry once here rather than immediately replacing the map with a schematic.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7_500);
@@ -76,14 +80,12 @@ async function locatePlace(place: MapPlace, key: string): Promise<LocatedPlace> 
   try {
     const body = await amapJson(url);
     const poi = asRecord(asArray(body.pois)[0]);
-    const location = text(poi?.location);
-    const [longitude, latitude] = location.split(",").map(Number);
+    const [longitude, latitude] = text(poi?.location).split(",").map(Number);
     if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
       return { ...place, longitude, latitude };
     }
   } catch {
-    // The address endpoint below is deliberately tried for landmarks whose POI
-    // alias is not recognized by the text-search endpoint.
+    // Some landmarks are only recognized by the geocoding endpoint below.
   }
 
   const fallbackUrl = new URL("https://restapi.amap.com/v3/geocode/geo");
@@ -105,14 +107,37 @@ function formatPoint(point: LocatedPlace) {
   return `${point.longitude.toFixed(6)},${point.latitude.toFixed(6)}`;
 }
 
-function samplePolyline(value: string, maximum = 14) {
-  const points = value.split(";").filter((item) => /^\d+(?:\.\d+)?,\d+(?:\.\d+)?$/.test(item));
-  if (points.length <= maximum) return points;
-  const step = (points.length - 1) / (maximum - 1);
-  return Array.from({ length: maximum }, (_, index) => points[Math.round(index * step)]);
+function parseCoordinate(value: string): Coordinate | null {
+  const [longitude, latitude] = value.split(",").map(Number);
+  return Number.isFinite(longitude) && Number.isFinite(latitude)
+    ? [longitude, latitude]
+    : null;
 }
 
-async function walkingPolyline(origin: LocatedPlace, destination: LocatedPlace, key: string) {
+function samplePolyline(value: string, maximum = 14) {
+  const points = value
+    .split(";")
+    .map(parseCoordinate)
+    .filter((point): point is Coordinate => Boolean(point));
+  if (points.length <= maximum) return points;
+  const step = (points.length - 1) / (maximum - 1);
+  return Array.from({ length: maximum }, (_, index) =>
+    points[Math.round(index * step)],
+  );
+}
+
+async function walkingPolyline(
+  origin: LocatedPlace,
+  destination: LocatedPlace,
+  key: string,
+): Promise<RouteSegment> {
+  const fallback: RouteSegment = {
+    points: [
+      [origin.longitude, origin.latitude],
+      [destination.longitude, destination.latitude],
+    ],
+    actual: false,
+  };
   const url = new URL("https://restapi.amap.com/v5/direction/walking");
   url.search = new URLSearchParams({
     key,
@@ -124,14 +149,68 @@ async function walkingPolyline(origin: LocatedPlace, destination: LocatedPlace, 
     const body = await amapJson(url);
     const route = asRecord(body.route);
     const path = asRecord(asArray(route?.paths)[0]);
-    const parts = asArray(path?.steps)
+    const points = asArray(path?.steps)
       .map((value) => text(asRecord(value)?.polyline))
       .flatMap((value) => samplePolyline(value, 7));
-    return parts.length >= 2 ? parts : [formatPoint(origin), formatPoint(destination)];
+    return points.length >= 2 ? { points, actual: true } : fallback;
   } catch {
-    // A route preview must remain useful when walking calculation is unavailable.
-    return [formatPoint(origin), formatPoint(destination)];
+    return fallback;
   }
+}
+
+function project([longitude, latitude]: Coordinate) {
+  const safeLatitude = Math.max(-85, Math.min(85, latitude));
+  const sin = Math.sin((safeLatitude * Math.PI) / 180);
+  return [
+    (longitude + 180) / 360,
+    0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI),
+  ] as Coordinate;
+}
+
+function unproject([x, y]: Coordinate) {
+  const longitude = x * 360 - 180;
+  const latitude =
+    (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+  return [longitude, latitude] as Coordinate;
+}
+
+function calculateViewport(coordinates: Coordinate[]) {
+  const projected = coordinates.map(project);
+  const xs = projected.map(([x]) => x);
+  const ys = projected.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const widthRatio =
+    (MAP_WIDTH - MAP_PADDING * 2) / (256 * Math.max(maxX - minX, 0.000001));
+  const heightRatio =
+    (MAP_HEIGHT - MAP_PADDING * 2) / (256 * Math.max(maxY - minY, 0.000001));
+  const zoom = Math.max(
+    3,
+    Math.min(17, Math.floor(Math.log2(Math.min(widthRatio, heightRatio)))),
+  );
+  const center = unproject([(minX + maxX) / 2, (minY + maxY) / 2]);
+  return { center, zoom, width: MAP_WIDTH, height: MAP_HEIGHT };
+}
+
+function overlayHeader(
+  points: LocatedPlace[],
+  segments: RouteSegment[],
+  viewport: ReturnType<typeof calculateViewport>,
+) {
+  return JSON.stringify({
+    points: points.map(
+      ({ longitude, latitude }) => [longitude, latitude] as Coordinate,
+    ),
+    segments,
+    viewport,
+  });
+}
+
+function getEdgeCache() {
+  if (typeof caches === "undefined") return null;
+  return (caches as CacheStorage & { default?: Cache }).default ?? null;
 }
 
 export async function GET(request: Request) {
@@ -141,36 +220,47 @@ export async function GET(request: Request) {
     return Response.json({ error: "地图预览暂不可用" }, { status: 424 });
   }
 
+  const edgeCache = getEdgeCache();
+  let cached: Response | undefined;
   try {
-    const points: LocatedPlace[] = [];
-    for (const place of places) points.push(await locatePlace(place, key));
+    cached = await edgeCache?.match(request);
+  } catch {
+    // A cache outage must not prevent a fresh map from being generated.
+  }
+  if (cached) return cached;
 
-    const routeParts: string[] = [];
-    for (let index = 1; index < points.length; index += 1) {
-      routeParts.push((await walkingPolyline(points[index - 1], points[index], key)).join(";"));
-    }
+  try {
+    const points = await Promise.all(
+      places.map((place) => locatePlace(place, key)),
+    );
+    const segments = await Promise.all(
+      points.slice(1).map((point, index) =>
+        walkingPolyline(points[index], point, key),
+      ),
+    );
+    const allCoordinates = [
+      ...points.map(
+        ({ longitude, latitude }) => [longitude, latitude] as Coordinate,
+      ),
+      ...segments.flatMap((segment) => segment.points),
+    ];
+    const viewport = calculateViewport(allCoordinates);
 
     const mapUrl = new URL("https://restapi.amap.com/v3/staticmap");
-    const markerGroups = points.map((point, index) =>
-      `mid,0x16775a,${index + 1}:${formatPoint(point)}`,
-    );
-    const path = routeParts.flatMap((part) => samplePolyline(part, 12)).join(";");
     const buildStaticMapRequest = (traffic: "0" | "1") => {
       mapUrl.search = new URLSearchParams({
         key,
-        size: "750*300",
-        scale: "2",
+        size: `${MAP_WIDTH}*${MAP_HEIGHT}`,
+        scale: "1",
         traffic,
-        markers: markerGroups.join("|"),
-        paths: `6,0x16775a,0.82,,0:${path || points.map(formatPoint).join(";")}`,
+        location: `${viewport.center[0].toFixed(6)},${viewport.center[1].toFixed(6)}`,
+        zoom: String(viewport.zoom),
       }).toString();
       return mapUrl.toString();
     };
 
     let response = await fetch(buildStaticMapRequest("1"));
     let contentType = response.headers.get("content-type") || "";
-    // Traffic layers are optional. Retry without them before declaring the map
-    // unavailable, because a clear base map is still much better than no map.
     if (!response.ok || !contentType.startsWith("image/")) {
       response = await fetch(buildStaticMapRequest("0"));
       contentType = response.headers.get("content-type") || "";
@@ -178,12 +268,20 @@ export async function GET(request: Request) {
     if (!response.ok || !contentType.startsWith("image/")) {
       throw new Error("地图图片生成失败");
     }
-    return new Response(response.body, {
+
+    const result = new Response(response.body, {
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "public, max-age=600",
+        "Cache-Control": "public, max-age=86400, s-maxage=604800",
+        "X-RouteSense-Overlay": overlayHeader(points, segments, viewport),
       },
     });
+    try {
+      await edgeCache?.put(request, result.clone());
+    } catch {
+      // The response remains usable even when edge caching is unavailable.
+    }
+    return result;
   } catch {
     return Response.json({ error: "暂未能生成当天地图预览" }, { status: 502 });
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildExperimentCsv,
   DEFAULT_SETTINGS,
@@ -878,6 +878,152 @@ function PlaceCard({ place }: { place: ItineraryPlace }) {
   );
 }
 
+type MapCoordinate = [number, number];
+
+interface DailyMapPreview {
+  imageUrl: string;
+  points: MapCoordinate[];
+  segments: Array<{ points: MapCoordinate[]; actual: boolean }>;
+  viewport: {
+    center: MapCoordinate;
+    zoom: number;
+    width: number;
+    height: number;
+  };
+}
+
+const dailyMapPreviewCache = new Map<string, Promise<DailyMapPreview>>();
+
+function buildDailyMapUrl(points: ItineraryPlace[]) {
+  const places = points.map(({ name, city }) => ({ name, city }));
+  return `/api/daily-map?${new URLSearchParams({
+    places: JSON.stringify(places),
+    version: "3",
+  }).toString()}`;
+}
+
+function loadDailyMapPreview(url: string) {
+  const cached = dailyMapPreviewCache.get(url);
+  if (cached) return cached;
+  const request = fetch(url)
+    .then(async (response) => {
+      if (!response.ok) throw new Error("地图预览暂不可用");
+      const rawOverlay = response.headers.get("X-RouteSense-Overlay");
+      if (!rawOverlay) throw new Error("地图路线数据缺失");
+      const overlay = JSON.parse(rawOverlay) as Omit<DailyMapPreview, "imageUrl">;
+      if (
+        !Array.isArray(overlay.points) ||
+        !Array.isArray(overlay.segments) ||
+        !overlay.viewport
+      ) {
+        throw new Error("地图路线数据无效");
+      }
+      const blob = await response.blob();
+      return { ...overlay, imageUrl: URL.createObjectURL(blob) };
+    })
+    .catch((error) => {
+      dailyMapPreviewCache.delete(url);
+      throw error;
+    });
+  dailyMapPreviewCache.set(url, request);
+  return request;
+}
+
+function projectMapCoordinate([longitude, latitude]: MapCoordinate) {
+  const safeLatitude = Math.max(-85, Math.min(85, latitude));
+  const sin = Math.sin((safeLatitude * Math.PI) / 180);
+  return [
+    (longitude + 180) / 360,
+    0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI),
+  ] as MapCoordinate;
+}
+
+function RouteMapOverlay({ preview }: { preview: DailyMapPreview }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const surface = canvas?.parentElement;
+    if (!canvas || !surface) return;
+
+    const draw = () => {
+      const width = surface.clientWidth;
+      const height = surface.clientHeight;
+      if (!width || !height) return;
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+
+      const center = projectMapCoordinate(preview.viewport.center);
+      const worldSize = 256 * 2 ** preview.viewport.zoom;
+      const toPixel = (coordinate: MapCoordinate) => {
+        const projected = projectMapCoordinate(coordinate);
+        const mapX =
+          preview.viewport.width / 2 + (projected[0] - center[0]) * worldSize;
+        const mapY =
+          preview.viewport.height / 2 + (projected[1] - center[1]) * worldSize;
+        return [
+          (mapX / preview.viewport.width) * width,
+          (mapY / preview.viewport.height) * height,
+        ] as MapCoordinate;
+      };
+
+      for (const segment of preview.segments) {
+        if (segment.points.length < 2) continue;
+        const pixels = segment.points.map(toPixel);
+        context.beginPath();
+        context.moveTo(pixels[0][0], pixels[0][1]);
+        for (const [x, y] of pixels.slice(1)) context.lineTo(x, y);
+        context.setLineDash([]);
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.strokeStyle = "rgba(255,255,255,0.92)";
+        context.lineWidth = 7;
+        context.stroke();
+        context.beginPath();
+        context.moveTo(pixels[0][0], pixels[0][1]);
+        for (const [x, y] of pixels.slice(1)) context.lineTo(x, y);
+        context.setLineDash(segment.actual ? [] : [7, 6]);
+        context.strokeStyle = "#08775d";
+        context.lineWidth = 3;
+        context.stroke();
+      }
+
+      context.setLineDash([]);
+      preview.points.forEach((point, index) => {
+        const [x, y] = toPixel(point);
+        context.beginPath();
+        context.arc(x, y, 12, 0, Math.PI * 2);
+        context.fillStyle = "#08775d";
+        context.fill();
+        context.strokeStyle = "white";
+        context.lineWidth = 3;
+        context.stroke();
+        context.fillStyle = "white";
+        context.font = "800 11px system-ui, sans-serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(String(index + 1), x, y + 0.5);
+      });
+    };
+
+    draw();
+    const observer = new ResizeObserver(draw);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [preview]);
+
+  return (
+    <canvas ref={canvasRef} className="route-map-overlay" aria-hidden="true" />
+  );
+}
+
 function ActualRouteMap({
   points,
   title,
@@ -887,41 +1033,54 @@ function ActualRouteMap({
   title: string;
   overview: boolean;
 }) {
-  const mapUrl = useMemo(() => {
-    const places = points.map(({ name, city }) => ({ name, city }));
-    return `/api/daily-map?${new URLSearchParams({
-      places: JSON.stringify(places),
-    }).toString()}`;
-  }, [points]);
+  const mapUrl = useMemo(() => buildDailyMapUrl(points), [points]);
   const [mapState, setMapState] = useState<"loading" | "loaded" | "unavailable">(
     "loading",
   );
+  const [preview, setPreview] = useState<DailyMapPreview | null>(null);
 
   useEffect(() => {
+    let active = true;
     setMapState("loading");
+    setPreview(null);
+    loadDailyMapPreview(mapUrl)
+      .then((result) => {
+        if (active) setPreview(result);
+      })
+      .catch(() => {
+        if (active) setMapState("unavailable");
+      });
+    return () => {
+      active = false;
+    };
   }, [mapUrl]);
 
   return (
     <section className="itinerary-route-canvas" aria-label="当天真实地点路线预览">
       <div className="route-canvas-heading">
         <div>
-          <span>当日路线预览</span>
+          <span>行程路线脉络</span>
           <strong>{overview ? "全程地点总览" : title}</strong>
         </div>
         <small>
           {mapState === "loaded"
-            ? "高德地点定位 · 实际道路预览"
-            : "正在定位当天地点…"}
+            ? "高德地点定位 · 当日路线已缓存"
+            : mapState === "unavailable"
+              ? "地图底图暂不可用"
+              : "正在生成并保存当天地图…"}
         </small>
       </div>
       <div className={`route-map-surface ${mapState}`}>
-        {mapState !== "unavailable" && (
-          <img
-            src={mapUrl}
-            alt={`${title}的真实地点路线图`}
-            onLoad={() => setMapState("loaded")}
-            onError={() => setMapState("unavailable")}
-          />
+        {preview && mapState !== "unavailable" && (
+          <>
+            <img
+              src={preview.imageUrl}
+              alt={`${title}的真实地点路线图`}
+              onLoad={() => setMapState("loaded")}
+              onError={() => setMapState("unavailable")}
+            />
+            <RouteMapOverlay preview={preview} />
+          </>
         )}
         {mapState !== "loaded" && (
           <div className="route-canvas-track" aria-label="地点顺序预览">
@@ -1094,6 +1253,29 @@ function AssistantMessageContent({ content }: { content: string }) {
   const [activeDay, setActiveDay] = useState(0);
   const displayedActiveDay =
     activeDay >= itinerary.days.length ? -1 : activeDay;
+
+  useEffect(() => {
+    const dailyPoints = itinerary.days
+      .map((day) => day.places.slice(0, 6))
+      .filter((points) => points.length >= 2);
+    const overviewPoints = itinerary.days
+      .map((day) => day.places[0])
+      .filter((place): place is ItineraryPlace => Boolean(place))
+      .slice(0, 6);
+    if (overviewPoints.length >= 2) dailyPoints.push(overviewPoints);
+    let active = true;
+    void (async () => {
+      for (const points of dailyPoints) {
+        if (!active) break;
+        await loadDailyMapPreview(buildDailyMapUrl(points)).catch(
+          () => undefined,
+        );
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [itinerary]);
 
   if (itinerary.days.length > 0) {
     const selectedDay =
