@@ -822,7 +822,7 @@ textarea:focus-visible {
 
 .itinerary-route-canvas {
   position: relative;
-  min-height: 178px;
+  min-height: 212px;
   overflow: hidden;
   border: 1px solid #c9ddd3;
   border-radius: 15px;
@@ -843,6 +843,94 @@ textarea:focus-visible {
   border-radius: 50%;
   content: "";
   transform: rotate(-3deg);
+}
+
+.route-map-surface {
+  position: relative;
+  z-index: 1;
+  min-height: 150px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(178, 205, 192, 0.8);
+  border-radius: 11px;
+  background: #edf4ef;
+}
+
+.route-map-surface img {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  object-fit: cover;
+}
+
+.route-map-surface.loaded {
+  min-height: 0;
+}
+
+.route-map-surface.loaded + .route-map-legend {
+  position: relative;
+  z-index: 2;
+}
+
+.route-map-surface.loaded ~ * {
+  position: relative;
+}
+
+.route-map-surface.loaded .route-canvas-track {
+  display: none;
+}
+
+.route-map-surface.unavailable {
+  background:
+    linear-gradient(30deg, transparent 46%, rgba(92, 125, 111, 0.08) 47% 49%, transparent 50%),
+    linear-gradient(150deg, transparent 45%, rgba(92, 125, 111, 0.07) 46% 48%, transparent 49%),
+    #edf4ef;
+}
+
+.route-map-fallback {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  bottom: 6px;
+  left: 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 5px 7px;
+  color: #60746b;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.route-map-legend {
+  display: flex;
+  gap: 5px 9px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.route-map-legend a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 132px;
+  overflow: hidden;
+  color: #34584a;
+  font-size: 9px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-map-legend b {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #16775a;
+  color: white;
+  font-size: 8px;
 }
 
 .route-canvas-heading {

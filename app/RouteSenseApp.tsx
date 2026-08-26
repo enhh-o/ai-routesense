@@ -878,6 +878,91 @@ function PlaceCard({ place }: { place: ItineraryPlace }) {
   );
 }
 
+function ActualRouteMap({
+  points,
+  title,
+  overview,
+}: {
+  points: ItineraryPlace[];
+  title: string;
+  overview: boolean;
+}) {
+  const mapUrl = useMemo(() => {
+    const places = points.map(({ name, city }) => ({ name, city }));
+    return `/api/daily-map?${new URLSearchParams({
+      places: JSON.stringify(places),
+    }).toString()}`;
+  }, [points]);
+  const [mapState, setMapState] = useState<"loading" | "loaded" | "unavailable">(
+    "loading",
+  );
+
+  useEffect(() => {
+    setMapState("loading");
+  }, [mapUrl]);
+
+  return (
+    <section className="itinerary-route-canvas" aria-label="当天真实地点路线预览">
+      <div className="route-canvas-heading">
+        <div>
+          <span>当日路线预览</span>
+          <strong>{overview ? "全程地点总览" : title}</strong>
+        </div>
+        <small>
+          {mapState === "loaded"
+            ? "高德地点定位 · 实际道路预览"
+            : "正在定位当天地点…"}
+        </small>
+      </div>
+      <div className={`route-map-surface ${mapState}`}>
+        {mapState !== "unavailable" && (
+          <img
+            src={mapUrl}
+            alt={`${title}的真实地点路线图`}
+            onLoad={() => setMapState("loaded")}
+            onError={() => setMapState("unavailable")}
+          />
+        )}
+        {mapState !== "loaded" && (
+          <div className="route-canvas-track" aria-label="地点顺序预览">
+            {points.map((place, index) => (
+              <a
+                key={`${place.name}-${index}`}
+                href={buildAmapPlaceUrl(place)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <i>{index + 1}</i>
+                <span>{place.name}</span>
+              </a>
+            ))}
+          </div>
+        )}
+        {mapState === "unavailable" && (
+          <small className="route-map-fallback">
+            暂未获取到地图底图，已保留景点顺序预览；下方交通卡片仍可查看各段距离与用时。
+          </small>
+        )}
+      </div>
+      {mapState === "loaded" && (
+        <div className="route-map-legend" aria-label="地点图例">
+          {points.map((place, index) => (
+            <a
+              key={`${place.name}-${index}`}
+              href={buildAmapPlaceUrl(place)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <b>{index + 1}</b>
+              {place.name}
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ItineraryRouteCanvas({
   days,
   activeDay,
@@ -894,28 +979,11 @@ function ItineraryRouteCanvas({
   ).slice(0, 6);
   if (!points.length) return null;
   return (
-    <section className="itinerary-route-canvas" aria-label="行程路线脉络示意">
-      <div className="route-canvas-heading">
-        <div>
-          <span>行程路线脉络</span>
-          <strong>{activeDay < 0 ? "全程地点总览" : days[activeDay]?.title}</strong>
-        </div>
-        <small>位置为行程顺序示意，点击地点打开地图</small>
-      </div>
-      <div className="route-canvas-track">
-        {points.map((place, index) => (
-          <a
-            key={`${place.name}-${index}`}
-            href={buildAmapPlaceUrl(place)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <i>{index + 1}</i>
-            <span>{place.name}</span>
-          </a>
-        ))}
-      </div>
-    </section>
+    <ActualRouteMap
+      points={points}
+      title={activeDay < 0 ? "全程地点总览" : days[activeDay]?.title || "当日行程"}
+      overview={activeDay < 0}
+    />
   );
 }
 
