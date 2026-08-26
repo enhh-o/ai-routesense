@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "pnpm run build && node --test tests/rendered-html.test.mjs && node --experimental-strip-types --test tests/routesense-router.test.mjs",
+    "test": "pnpm run build && node --test tests/rendered-html.test.mjs && node --experimental-strip-types --test tests/routesense-router.test.mjs tests/travel-options.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "eval:validate": "node evaluation/validate_dataset.mjs",

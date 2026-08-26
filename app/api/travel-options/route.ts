@@ -81,7 +81,7 @@ function isSameCity(origin: AmapPlace, destination: AmapPlace) {
   );
 }
 
-function getTravelOptions(origin: AmapPlace, destination: AmapPlace) {
+export function getTravelOptions(origin: AmapPlace, destination: AmapPlace) {
   const directDistanceKm = distanceKm(origin, destination);
   const roundedDistanceKm = Math.max(1, Math.round(directDistanceKm));
   const nearby = isSameCity(origin, destination) || directDistanceKm <= 80;
