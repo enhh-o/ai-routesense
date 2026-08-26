@@ -9,6 +9,17 @@ const configuredDatabaseId =
   process.env.ROUTESENSE_D1_DATABASE_ID?.trim() ||
   SITE_CREATOR_PLACEHOLDER_DATABASE_ID;
 
+// Keep non-secret model routing settings in the generated Wrangler config so
+// a dashboard deployment cannot accidentally remove them.
+const modelVars = {
+  ARK_MODEL_SMALL:
+    process.env.ARK_MODEL_SMALL?.trim() || "doubao-seed-2-0-mini-260428",
+  ARK_MODEL_GENERAL:
+    process.env.ARK_MODEL_GENERAL?.trim() || "doubao-seed-2-0-lite-260428",
+  ARK_MODEL_REASONING:
+    process.env.ARK_MODEL_REASONING?.trim() || "doubao-seed-2-0-pro-260215",
+};
+
 const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
@@ -17,6 +28,7 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  vars: modelVars,
   d1_databases: d1
     ? [
         {
