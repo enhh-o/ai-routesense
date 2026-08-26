@@ -166,6 +166,20 @@ interface ApiStatusResponse {
   tierStatus?: Record<ModelTier, boolean>;
 }
 
+interface TravelOptionsResponse {
+  scope?: string;
+  distanceKm?: number;
+  options?: string[];
+  note?: string;
+  error?: string;
+}
+
+interface TravelOptionsState {
+  status: "idle" | "loading" | "ready" | "error";
+  options: string[];
+  note: string;
+}
+
 type DestinationScope = "市内游" | "省内游" | "省外游";
 type DestinationDiscoveryStep = "location" | "scope" | "interests" | "results";
 
@@ -260,12 +274,20 @@ const DESTINATION_INTEREST_OPTIONS = [
 ] as const;
 
 const ITINERARY_TRANSPORT_OPTIONS = [
+  "公共交通",
+  "打车",
   "飞机",
   "高铁",
   "普通火车",
   "自驾",
   "长途汽车",
 ] as const;
+
+const EMPTY_TRAVEL_OPTIONS: TravelOptionsState = {
+  status: "idle",
+  options: [],
+  note: "填写出发地和目的地后，将按实际距离筛掉不合适的方式。",
+};
 
 function getDestinationTransportOptions(scope: DestinationScope | "") {
   if (scope === "市内游") return ["地铁", "公交", "打车", "自驾"];
@@ -577,7 +599,11 @@ function getTripSetupPrompt(text: string): TripSetupPrompt | null {
   return place ? { query: text, kind: "single_place", place } : null;
 }
 
-function buildSupplementedQuery(baseQuery: string, form: SupplementFormState) {
+function buildSupplementedQuery(
+  baseQuery: string,
+  form: SupplementFormState,
+  transportNote = "",
+) {
   const detailLines = [
     form.origin.trim() ? `- 出发地：${form.origin.trim()}` : "",
     form.destination.trim() ? `- 目的地：${form.destination.trim()}` : "",
@@ -594,6 +620,7 @@ function buildSupplementedQuery(baseQuery: string, form: SupplementFormState) {
     form.transportMode.trim()
       ? `- 城际出行方式：${form.transportMode.trim()}`
       : "- 城际出行方式：未指定，请结合预算、路程和时间选择性价比合适且可执行的方式",
+    transportNote ? `- 两地交通初筛：${transportNote}` : "",
     form.roomCount.trim()
       ? `- 住宿房间数：${form.roomCount.trim()}`
       : "",
@@ -1526,6 +1553,9 @@ export function RouteSenseApp() {
   const [supplementForm, setSupplementForm] = useState<SupplementFormState>(
     EMPTY_SUPPLEMENT_FORM,
   );
+  const [travelOptions, setTravelOptions] = useState<TravelOptionsState>(
+    EMPTY_TRAVEL_OPTIONS,
+  );
   const [tripSetupPrompt, setTripSetupPrompt] =
     useState<TripSetupPrompt | null>(null);
   const [tripSetupInput, setTripSetupInput] = useState("");
@@ -1605,6 +1635,62 @@ export function RouteSenseApp() {
     tripSetupPrompt !== null;
 
   useEffect(() => {
+    const origin = supplementForm.origin.trim();
+    const destination = supplementForm.destination.trim();
+    if (!supplementOpen || !origin || !destination) {
+      setTravelOptions(EMPTY_TRAVEL_OPTIONS);
+      return;
+    }
+    let active = true;
+    const controller = new AbortController();
+    setTravelOptions({
+      status: "loading",
+      options: [],
+      note: "正在根据两地距离筛选可行出行方式…",
+    });
+    const timeoutId = window.setTimeout(() => {
+      const params = new URLSearchParams({ origin, destination });
+      fetch(`/api/travel-options?${params.toString()}`, {
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const result = (await response.json()) as TravelOptionsResponse;
+          if (!response.ok || !result.options?.length) {
+            throw new Error(result.error || "交通方式筛选失败");
+          }
+          return result;
+        })
+        .then((result) => {
+          if (!active) return;
+          const options = result.options ?? [];
+          setTravelOptions({
+            status: "ready",
+            options,
+            note: result.note || "已按两地距离筛选可行方式。",
+          });
+          setSupplementForm((current) =>
+            current.transportMode && !options.includes(current.transportMode)
+              ? { ...current, transportMode: "" }
+              : current,
+          );
+        })
+        .catch((error) => {
+          if (!active || error instanceof DOMException) return;
+          setTravelOptions({
+            status: "error",
+            options: [],
+            note: "暂时无法判断距离；请留空让系统结合地点与预算选择。",
+          });
+        });
+    }, 450);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [supplementOpen, supplementForm.origin, supplementForm.destination]);
+
+  useEffect(() => {
     let active = true;
     fetch("/api/chat")
       .then(async (response) => {
@@ -1666,6 +1752,7 @@ export function RouteSenseApp() {
     setSupplementBaseQuery("");
     setSupplementBypassQuery("");
     setSupplementForm({ ...EMPTY_SUPPLEMENT_FORM });
+    setTravelOptions(EMPTY_TRAVEL_OPTIONS);
   }
 
   function resetDestinationDiscovery() {
@@ -1891,6 +1978,7 @@ export function RouteSenseApp() {
     const refinedQuery = buildSupplementedQuery(
       supplementBaseQuery,
       supplementForm,
+      travelOptions.status === "ready" ? travelOptions.note : "",
     );
     setSupplementPrompt(null);
     setSupplementOpen(false);
@@ -2927,7 +3015,7 @@ export function RouteSenseApp() {
                     </label>
 
                     <label>
-                      <span>城际出行方式</span>
+                      <span>出发地到目的地的出行方式</span>
                       <select
                         value={supplementForm.transportMode}
                         onChange={(event) =>
@@ -2937,15 +3025,18 @@ export function RouteSenseApp() {
                           )
                         }
                       >
-                        <option value="">由系统结合预算和路程选择</option>
-                        {ITINERARY_TRANSPORT_OPTIONS.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {mode}
-                          </option>
-                        ))}
+                        <option value="">由系统按距离、预算和可行性选择</option>
+                        {(travelOptions.status === "ready"
+                          ? travelOptions.options
+                          : [])
+                          .map((mode) => (
+                            <option key={mode} value={mode}>
+                              {mode}
+                            </option>
+                          ))}
                       </select>
                       <small className="prompt-helper-field-hint">
-                        未选择时，系统会在满足行程时间的前提下优先采用预算更合适的方式。
+                        {travelOptions.note}
                       </small>
                     </label>
 
