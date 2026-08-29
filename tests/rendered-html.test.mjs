@@ -302,9 +302,9 @@ test("ships the routing, evaluation, fallback and export surfaces", async () => 
   assert.match(destinationRoute, /目的地推荐暂时未返回有效结果/);
   assert.match(layout, /og\.png/);
   await access(new URL("../public/og.png", import.meta.url));
-  const previewFiles = await readdir(
+  const previewFiles = (await readdir(
     new URL("../app/_sites-preview", import.meta.url),
-  );
+  )).filter((file) => file !== ".gitkeep");
   assert.deepEqual(previewFiles, []);
 });
 
