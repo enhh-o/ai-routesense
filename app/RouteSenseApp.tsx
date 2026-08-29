@@ -2413,11 +2413,6 @@ export function RouteSenseApp() {
                 失败时保留上下文自动升级。
               </p>
             </div>
-            <div className="north-star">
-              <span>北极星指标</span>
-              <strong>单次成功任务成本</strong>
-              <small>总模型与工具成本 ÷ 成功任务数</small>
-            </div>
           </section>
 
           <section className={`demo-grid ${developerView ? "" : "single"}`}>

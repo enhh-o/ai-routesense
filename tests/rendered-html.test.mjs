@@ -52,7 +52,7 @@ test("server-renders the RouteSense product instead of the starter", async () =>
   assert.match(html, /价值感知 AI 模型路由系统/);
   assert.match(html, /每次请求/);
   assert.match(html, /刚好够用/);
-  assert.match(html, /单次成功任务成本/);
+  assert.doesNotMatch(html, /北极星指标/);
   assert.match(html, /多约束决策/);
   assert.match(html, /开发者视图/);
   assert.match(html, /本轮路由决策/);
