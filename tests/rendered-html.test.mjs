@@ -51,11 +51,13 @@ test("server-renders the RouteSense product instead of the starter", async () =>
   assert.match(html, /RouteSense/);
   assert.match(html, /价值感知 AI 模型路由系统/);
   assert.match(html, /只为您，生成/);
-  assert.match(html, /更贴合需求/);
+  assert.match(html, /更佳/);
   assert.match(html, /旅行计划/);
   assert.match(html, /用更合理的成本，智能选用更优模型/);
   assert.match(html, /准备好开启我们新一段旅程吗？/);
+  assert.doesNotMatch(html, /更贴合需求/);
   assert.doesNotMatch(html, /刚好够用/);
+  assert.doesNotMatch(html, /固定档位可用于观察质量/);
   assert.doesNotMatch(html, /北极星指标/);
   assert.match(html, /多约束决策/);
   assert.match(html, /开发者视图/);

@@ -2404,7 +2404,7 @@ export function RouteSenseApp() {
               <p className="eyebrow">旅游路由实验室 · 合成演示</p>
               <h1>
                 只为您，生成
-                <span>更贴合需求</span>
+                <span>更佳</span>
                 的旅行计划
               </h1>
               <p>
@@ -2449,9 +2449,6 @@ export function RouteSenseApp() {
                       ? "自动路由：以合理成本匹配优质模型"
                       : `固定使用 ${LABEL_TEXT.tier[agentPreference]}`}
                   </strong>
-                  <small>
-                    自动模式会在成本可控的同时匹配更合适的模型能力；固定档位可用于观察质量、速度和 Token 的取舍。
-                  </small>
                 </div>
                 <label>
                   <span className="sr-only">选择模型模式</span>
