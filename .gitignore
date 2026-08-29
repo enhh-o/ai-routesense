@@ -41,5 +41,6 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+/.worktrees/
 /.dev-stdout.log
 /.dev-stderr.log
