@@ -13,6 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "eval:validate": "node evaluation/validate_dataset.mjs",
+    "eval:v2:validate": "node evaluation/v2/validate_dataset_v2.mjs",
     "eval:route-baseline": "node --experimental-strip-types evaluation/check_router_baseline.mjs --split=development",
     "eval:holdout-experiment": "node --experimental-strip-types evaluation/check_router_baseline.mjs --split=holdout"
   },

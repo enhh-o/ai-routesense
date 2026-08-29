@@ -1,0 +1,6 @@
+{
+  "version": "2.0.0",
+  "development": ["RS-V2-C1-D01", "RS-V2-C1-D02", "RS-V2-C1-D03", "RS-V2-C2-D01", "RS-V2-C2-D02", "RS-V2-C2-D03", "RS-V2-C3-D01", "RS-V2-C3-D02", "RS-V2-C3-D03", "RS-V2-C4-D01", "RS-V2-C4-D02", "RS-V2-C4-D03", "RS-V2-C5-D01", "RS-V2-C5-D02", "RS-V2-C5-D03", "RS-V2-C6-D01", "RS-V2-C6-D02", "RS-V2-C6-D03", "RS-V2-C7-D01", "RS-V2-C7-D02", "RS-V2-C7-D03"],
+  "holdout": ["RS-V2-C1-H01", "RS-V2-C1-H02", "RS-V2-C1-H03", "RS-V2-C1-H04", "RS-V2-C1-H05", "RS-V2-C1-H06", "RS-V2-C2-H01", "RS-V2-C2-H02", "RS-V2-C2-H03", "RS-V2-C2-H04", "RS-V2-C2-H05", "RS-V2-C2-H06", "RS-V2-C3-H01", "RS-V2-C3-H02", "RS-V2-C3-H03", "RS-V2-C3-H04", "RS-V2-C3-H05", "RS-V2-C3-H06", "RS-V2-C4-H01", "RS-V2-C4-H02", "RS-V2-C4-H03", "RS-V2-C4-H04", "RS-V2-C4-H05", "RS-V2-C4-H06", "RS-V2-C5-H01", "RS-V2-C5-H02", "RS-V2-C5-H03", "RS-V2-C5-H04", "RS-V2-C5-H05", "RS-V2-C5-H06", "RS-V2-C6-H01", "RS-V2-C6-H02", "RS-V2-C6-H03", "RS-V2-C6-H04", "RS-V2-C6-H05", "RS-V2-C6-H06", "RS-V2-C7-H01", "RS-V2-C7-H02", "RS-V2-C7-H03", "RS-V2-C7-H04", "RS-V2-C7-H05", "RS-V2-C7-H06"],
+  "policy": "开发阶段仅使用 development 调整路由与评分器；模型映射与门槛冻结后，holdout 仅用于四组、每组 3 次的正式对照，不得再据其结果调参。"
+}
