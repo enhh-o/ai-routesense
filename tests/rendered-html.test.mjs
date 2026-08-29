@@ -89,6 +89,8 @@ test("ships the routing, evaluation, fallback and export surfaces", async () => 
     router,
     layout,
     apiRoute,
+    arkClient,
+    travelPrompt,
     placeImageRoute,
     locationRoute,
     destinationRoute,
@@ -98,6 +100,8 @@ test("ships the routing, evaluation, fallback and export surfaces", async () => 
     readFile(new URL("../lib/routesense.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/ark-client.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/travel-prompt.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/place-image/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/location/route.ts", import.meta.url), "utf8"),
     readFile(
@@ -245,10 +249,10 @@ test("ships the routing, evaluation, fallback and export surfaces", async () => 
   assert.match(apiRoute, /process\.env\.ARK_API_KEY/);
   assert.match(apiRoute, /type: "replace"/);
   assert.match(apiRoute, /Authorization: `Bearer \$\{apiKey\}`/);
-  assert.match(apiRoute, /ARK_MODEL_SMALL/);
-  assert.match(apiRoute, /ARK_MODEL_GENERAL/);
-  assert.match(apiRoute, /ARK_MODEL_REASONING/);
-  assert.match(apiRoute, /getDedicatedModelForTier/);
+  assert.match(arkClient, /ARK_MODEL_SMALL/);
+  assert.match(arkClient, /ARK_MODEL_GENERAL/);
+  assert.match(arkClient, /ARK_MODEL_REASONING/);
+  assert.match(apiRoute, /getArkModelForTier/);
   assert.match(apiRoute, /tierStatus/);
   assert.match(apiRoute, /STREAM_IDLE_TIMEOUT_MS = 45_000/);
   assert.match(apiRoute, /max_tokens: MAX_OUTPUT_TOKENS/);
@@ -258,18 +262,18 @@ test("ships the routing, evaluation, fallback and export surfaces", async () => 
   assert.match(apiRoute, /Open-Meteo（免密钥）/);
   assert.match(apiRoute, /未配置实时票务数据源/);
   assert.match(apiRoute, /未配置景点运营数据源/);
-  assert.match(apiRoute, /这是对比任务：先直接给出结论和一张 Markdown 对比表/);
+  assert.match(travelPrompt, /这是对比任务：先直接给出结论和一张 Markdown 对比表/);
   assert.match(apiRoute, /restapi\.amap\.com\/v5\/direction\/transit\/integrated/);
   assert.match(apiRoute, /uri\.amap\.com\/navigation/);
   assert.doesNotMatch(apiRoute, /导航入口（出发时可选）/);
   assert.match(apiRoute, /模型规划估算（未接入地图服务）/);
-  assert.match(apiRoute, /建议交通方式/);
+  assert.match(travelPrompt, /建议交通方式/);
   assert.match(apiRoute, /formatCurrency/);
   assert.match(apiRoute, /normalizeDurationText/);
   assert.doesNotMatch(apiRoute, /预计约 ¥2–30/);
   assert.doesNotMatch(apiRoute, /线路、耗时与费用请在地图中确认/);
   assert.match(apiRoute, /\[\[ROUTE\|/);
-  assert.match(apiRoute, /\[\[PLACE\|/);
+  assert.match(travelPrompt, /\[\[PLACE\|/);
   assert.match(apiRoute, /ensureRouteMarkersBetweenPlaces/);
   assert.match(apiRoute, /服务端同样拒绝转发完整会话/);
   assert.match(apiRoute, /TRAFFIC_TOTAL/);
