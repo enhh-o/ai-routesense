@@ -102,8 +102,7 @@ const initialDecision = routeQuery(defaultQuery, DEFAULT_SETTINGS);
 const welcomeMessage: Message = {
   id: "assistant-welcome",
   role: "assistant",
-  content:
-    "告诉我你想怎样旅行。我会先判断该追问、检索还是规划，再选择刚好够用的模型能力。",
+  content: "准备好开启我们新一段旅程吗？",
 };
 
 const initialMessages: Message[] = [welcomeMessage];
@@ -2404,13 +2403,12 @@ export function RouteSenseApp() {
             <div>
               <p className="eyebrow">旅游路由实验室 · 合成演示</p>
               <h1>
-                每次请求，只用
-                <span>刚好够用</span>
-                的 AI。
+                只为您，生成
+                <span>更贴合需求</span>
+                的旅行计划
               </h1>
               <p>
-                先判断该澄清、检索还是规划，再选择达到质量门槛的最低模型档位。
-                失败时保留上下文自动升级。
+                用更合理的成本，智能选用更优模型，为您高质量完成每一次旅行规划。
               </p>
             </div>
           </section>
@@ -2448,11 +2446,11 @@ export function RouteSenseApp() {
                   <span>模型选择</span>
                   <strong>
                     {agentPreference === "auto"
-                      ? "自动路由：按任务选择刚好够用的模型"
+                      ? "自动路由：以合理成本匹配优质模型"
                       : `固定使用 ${LABEL_TEXT.tier[agentPreference]}`}
                   </strong>
                   <small>
-                    自动模式适合日常使用；固定档位可用于观察质量、速度和 Token 的取舍。
+                    自动模式会在成本可控的同时匹配更合适的模型能力；固定档位可用于观察质量、速度和 Token 的取舍。
                   </small>
                 </div>
                 <label>
