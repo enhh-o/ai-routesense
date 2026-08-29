@@ -55,9 +55,16 @@ test("server-renders the RouteSense product instead of the starter", async () =>
   assert.match(html, /旅行计划/);
   assert.match(html, /用更合理的成本，智能选用更优模型/);
   assert.match(html, /准备好开启我们新一段旅程吗？/);
+  assert.match(html, /您可根据任务需求，自行选择模型。/);
+  assert.match(html, /Mini · 简单咨询与灵感/);
+  assert.match(html, /Lite · 常规行程与推荐/);
+  assert.match(html, /Pro · 多约束与复杂决策/);
   assert.doesNotMatch(html, /更贴合需求/);
   assert.doesNotMatch(html, /刚好够用/);
   assert.doesNotMatch(html, /固定档位可用于观察质量/);
+  assert.doesNotMatch(html, /<option value="small">Mini · 低成本<\/option>/);
+  assert.doesNotMatch(html, /<option value="general">Lite · 均衡<\/option>/);
+  assert.doesNotMatch(html, /<option value="reasoning">Pro · 高级推理<\/option>/);
   assert.doesNotMatch(html, /北极星指标/);
   assert.match(html, /多约束决策/);
   assert.match(html, /开发者视图/);

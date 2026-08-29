@@ -2449,6 +2449,7 @@ export function RouteSenseApp() {
                       ? "自动路由：以合理成本匹配优质模型"
                       : `固定使用 ${LABEL_TEXT.tier[agentPreference]}`}
                   </strong>
+                  <small>您可根据任务需求，自行选择模型。</small>
                 </div>
                 <label>
                   <span className="sr-only">选择模型模式</span>
@@ -2460,9 +2461,9 @@ export function RouteSenseApp() {
                     }
                   >
                     <option value="auto">自动选择</option>
-                    <option value="small">Mini · 低成本</option>
-                    <option value="general">Lite · 均衡</option>
-                    <option value="reasoning">Pro · 高级推理</option>
+                    <option value="small">Mini · 简单咨询与灵感</option>
+                    <option value="general">Lite · 常规行程与推荐</option>
+                    <option value="reasoning">Pro · 多约束与复杂决策</option>
                   </select>
                 </label>
               </section>
