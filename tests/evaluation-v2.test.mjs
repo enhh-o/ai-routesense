@@ -21,6 +21,10 @@ import {
   buildBlindJudgePrompt,
   parseBlindJudgeAnswer,
 } from "../lib/evaluation-judge.ts";
+import {
+  validateEvaluationBatchRequest,
+  validateHumanReview,
+} from "../lib/evaluation-api-guard.ts";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(
@@ -363,6 +367,66 @@ test("盲评只接收任务与答案，无法解析的评判结果必须转人�
     },
   );
   assert.equal(parseBlindJudgeAnswer("不是 JSON"), null);
+});
+
+test("受控评测入口必须确认、限制六条以内，并设置正向预算上限", () => {
+  assert.equal(
+    validateEvaluationBatchRequest({
+      datasetVersion: "2.0.0",
+      caseIds: ["RS-V2-C1-D01"],
+      variants: ["dynamic"],
+      trials: [1],
+      maxRuns: 1,
+      maxBudgetCny: 1,
+    }).error,
+    "开始付费评测前需要明确确认。",
+  );
+  assert.equal(
+    validateEvaluationBatchRequest({
+      confirmed: true,
+      datasetVersion: "2.0.0",
+      caseIds: ["RS-V2-C1-D01"],
+      variants: ["dynamic"],
+      trials: [1],
+      maxRuns: 7,
+      maxBudgetCny: 1,
+    }).error,
+    "单次最多运行 6 条评测。",
+  );
+  assert.deepEqual(
+    validateEvaluationBatchRequest({
+      confirmed: true,
+      datasetVersion: "2.0.0",
+      caseIds: ["RS-V2-C1-D01"],
+      variants: ["dynamic"],
+      trials: [1],
+      maxRuns: 1,
+      maxBudgetCny: 1,
+    }),
+    { value: { datasetVersion: "2.0.0", caseIds: ["RS-V2-C1-D01"], variants: ["dynamic"], trials: [1], maxRuns: 1, maxBudgetCny: 1 } },
+  );
+});
+
+test("人工复核只接受完整的五维评分与有限长度的备注", () => {
+  assert.equal(
+    validateHumanReview({ reviewer: "产品", rubric: { taskCompletion: 5 }, notes: "遗漏字段" }).error,
+    "人工复核需要提供五项 1–5 分评分。",
+  );
+  assert.deepEqual(
+    validateHumanReview({
+      reviewer: "产品",
+      rubric: { taskCompletion: 5, constraintSatisfaction: 4, factualGrounding: 4, executability: 3, interactionQuality: 5 },
+      notes: "遗漏了轮椅出入口信息。",
+    }),
+    {
+      value: {
+        reviewer: "产品",
+        rubric: { taskCompletion: 5, constraintSatisfaction: 4, factualGrounding: 4, executability: 3, interactionQuality: 5 },
+        notes: "遗漏了轮椅出入口信息。",
+        correctionOfRunId: null,
+      },
+    },
+  );
 });
 
 test("评测迁移只新增独立记录表，日常运行列表不依赖缺失的反馈时间列", async () => {

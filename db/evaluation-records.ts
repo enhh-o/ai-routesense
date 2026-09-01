@@ -126,3 +126,23 @@ export async function listEvaluationRunSummaries({
     .orderBy(desc(evaluationRuns.createdAt))
     .limit(safeLimit);
 }
+
+export async function saveEvaluationHumanReview({
+  runId,
+  reviewJson,
+  correctionOfRunId,
+}: {
+  runId: string;
+  reviewJson: string;
+  correctionOfRunId: string | null;
+}) {
+  const db = await getDb();
+  return db
+    .update(evaluationRuns)
+    .set({
+      humanReviewJson: reviewJson,
+      humanReviewState: "completed",
+      correctionOfRunId,
+    })
+    .where(eq(evaluationRuns.id, runId));
+}
