@@ -35,7 +35,30 @@ export async function listRecentRunRecords(limit = 20) {
   const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 50);
   const db = await getDb();
   return db
-    .select()
+    .select({
+      id: modelRuns.id,
+      createdAt: modelRuns.createdAt,
+      completedAt: modelRuns.completedAt,
+      status: modelRuns.status,
+      mode: modelRuns.mode,
+      provider: modelRuns.provider,
+      query: modelRuns.query,
+      promptVersion: modelRuns.promptVersion,
+      routeTier: modelRuns.routeTier,
+      routeDecisionJson: modelRuns.routeDecisionJson,
+      modelName: modelRuns.modelName,
+      requestPayloadJson: modelRuns.requestPayloadJson,
+      rawResponseJson: modelRuns.rawResponseJson,
+      answer: modelRuns.answer,
+      inputTokens: modelRuns.inputTokens,
+      outputTokens: modelRuns.outputTokens,
+      totalTokens: modelRuns.totalTokens,
+      latencyMs: modelRuns.latencyMs,
+      httpStatus: modelRuns.httpStatus,
+      errorCode: modelRuns.errorCode,
+      errorMessage: modelRuns.errorMessage,
+      feedback: modelRuns.feedback,
+    })
     .from(modelRuns)
     .orderBy(desc(modelRuns.createdAt))
     .limit(safeLimit);

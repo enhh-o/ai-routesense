@@ -8,6 +8,13 @@
       "when": 1785257087160,
       "tag": "0000_glossy_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788245635967,
+      "tag": "0001_living_arachne",
+      "breakpoints": true
     }
   ]
 }

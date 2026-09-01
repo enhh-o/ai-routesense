@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -182,4 +183,25 @@ test("Ark 缺少密钥或模型时抛出配置错误且不发送网络请求", a
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("评测迁移只新增独立记录表，日常运行列表不依赖缺失的反馈时间列", async () => {
+  const migrationName = (await readdir(path.join(projectRoot, "drizzle"))).find(
+    (name) => /^0001_.*\.sql$/.test(name),
+  );
+  assert.ok(migrationName, "应生成评测记录的首个增量迁移文件");
+  const [migration, runRecordsSource] = await Promise.all([
+    readFile(path.join(projectRoot, "drizzle", migrationName), "utf8"),
+    readFile(path.join(projectRoot, "db", "run-records.ts"), "utf8"),
+  ]);
+
+  assert.match(migration, /CREATE TABLE `evaluation_runs`/i);
+  assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM model_runs|UPDATE model_runs/i);
+  assert.doesNotMatch(migration, /ARK_(?:API_KEY|MODEL_[A-Z_]+)\s*=/);
+
+  const recentRecordsFunction = runRecordsSource.match(
+    /export async function listRecentRunRecords[\s\S]*?(?=\nexport async function updateRunFeedback)/,
+  )?.[0] ?? "";
+  assert.match(recentRecordsFunction, /\.select\(\{/);
+  assert.doesNotMatch(recentRecordsFunction, /feedbackUpdatedAt/);
 });

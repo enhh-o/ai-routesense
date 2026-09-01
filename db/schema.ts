@@ -1,4 +1,11 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const modelRuns = sqliteTable(
   "model_runs",
@@ -38,3 +45,59 @@ export const modelRuns = sqliteTable(
 
 export type ModelRun = typeof modelRuns.$inferSelect;
 export type NewModelRun = typeof modelRuns.$inferInsert;
+
+export const evaluationRuns = sqliteTable(
+  "evaluation_runs",
+  {
+    id: text("id").primaryKey(),
+    evaluationId: text("evaluation_id").notNull(),
+    datasetVersion: text("dataset_version").notNull(),
+    caseId: text("case_id").notNull(),
+    split: text("split").notNull(),
+    category: text("category").notNull(),
+    variant: text("variant").notNull(),
+    trial: integer("trial").notNull(),
+    status: text("status").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    initialTier: text("initial_tier"),
+    finalTier: text("final_tier"),
+    modelName: text("model_name"),
+    routeVersion: text("route_version").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    routeDecisionJson: text("route_decision_json"),
+    upgradeTraceJson: text("upgrade_trace_json"),
+    sanitizedRequestJson: text("sanitized_request_json"),
+    answer: text("answer"),
+    providerMetadataJson: text("provider_metadata_json"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    latencyMs: integer("latency_ms"),
+    httpStatus: integer("http_status"),
+    costCny: real("cost_cny"),
+    deterministicScoreJson: text("deterministic_score_json"),
+    judgeScoreJson: text("judge_score_json"),
+    humanReviewJson: text("human_review_json"),
+    humanReviewState: text("human_review_state").notNull().default("pending"),
+    failureTagsJson: text("failure_tags_json"),
+    correctionOfRunId: text("correction_of_run_id"),
+    createdAt: text("created_at").notNull(),
+    startedAt: text("started_at"),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("evaluation_runs_identity_idx").on(
+      table.datasetVersion,
+      table.caseId,
+      table.variant,
+      table.trial,
+    ),
+    index("evaluation_runs_status_idx").on(table.status),
+    index("evaluation_runs_category_idx").on(table.category),
+    index("evaluation_runs_variant_idx").on(table.variant),
+    index("evaluation_runs_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export type EvaluationRunRecord = typeof evaluationRuns.$inferSelect;
+export type NewEvaluationRunRecord = typeof evaluationRuns.$inferInsert;
