@@ -1,4 +1,5 @@
 import {
+  ArkCompletionError,
   getArkModelForTier,
   invokeArkCompletion,
   type ArkCompletionResult,
@@ -253,7 +254,15 @@ export async function runEvaluationTrial({
         latencyMs: attempts.reduce((sum, attempt) => sum + attempt.latencyMs, 0),
         reviewRequired: task.category === "safety_security" || attempts.length >= 3 || !score.passed,
       };
-    } catch {
+    } catch (error) {
+      // 只记录定位调用问题所需的结构化信息；不写入用户原文、请求体、密钥或供应商原始报错。
+      console.error("RouteSense evaluation model call failed", {
+        caseId,
+        variant,
+        tier,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+        httpStatus: error instanceof ArkCompletionError ? error.status : null,
+      });
       return {
         id,
         datasetVersion,

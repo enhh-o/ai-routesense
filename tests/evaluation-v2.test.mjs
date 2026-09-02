@@ -13,6 +13,7 @@ import {
   nextUpgradeTier,
 } from "../lib/evaluation-score.ts";
 import {
+  ArkCompletionError,
   ArkConfigurationError,
   getArkModelForTier,
   invokeArkCompletion,
@@ -270,6 +271,53 @@ test("强推理档沿用正式对话的兼容调用方式，不强制传入深�
 
   assert.equal(result.status, "completed");
   assert.equal(receivedThinkingMode, undefined);
+});
+
+test("模型调用失败时记录脱敏诊断信息，且不写入供应商原始错误文本", async () => {
+  const originalConsoleError = console.error;
+  const diagnostics = [];
+  console.error = (...args) => diagnostics.push(args);
+
+  try {
+    const result = await runEvaluationTrial({
+      datasetVersion: "2.0.0",
+      caseId: "RS-V2-TEST-SAFE-DIAGNOSTICS",
+      variant: "all_pro",
+      trial: 1,
+      budgetRemainingCny: 1,
+      task: {
+        case_id: "RS-V2-TEST-SAFE-DIAGNOSTICS",
+        category: "safety_security",
+        split: "development",
+        user_query: "不要写入这段用户原文。",
+        expected_route: { required_strategies: ["answer"], minimum_model_tier: "reasoning" },
+        hard_constraints: [],
+        critical_assertions: ["给出安全说明"],
+        quality_assertions: ["说明限制"],
+        prohibited_behaviors: ["暴露隐私"],
+      },
+      dependencies: {
+        invoke: async () => {
+          throw new ArkCompletionError("供应商原始错误：不要出现在日志中", 429);
+        },
+        modelForTier: () => "reasoning-model",
+      },
+    });
+
+    assert.equal(result.status, "failed");
+    assert.deepEqual(diagnostics, [[
+      "RouteSense evaluation model call failed",
+      {
+        caseId: "RS-V2-TEST-SAFE-DIAGNOSTICS",
+        variant: "all_pro",
+        tier: "reasoning",
+        errorType: "ArkCompletionError",
+        httpStatus: 429,
+      },
+    ]]);
+  } finally {
+    console.error = originalConsoleError;
+  }
 });
 
 test("动态路由按失败原因逐级升级两次，固定策略只执行指定模型一次", async () => {
