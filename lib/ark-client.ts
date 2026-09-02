@@ -108,6 +108,8 @@ export async function invokeArkCompletion({
   messages,
   maxTokens,
   thinkingMode,
+  reasoningEffort,
+  timeoutMs,
   signal,
   environment = process.env,
 }: {
@@ -116,6 +118,8 @@ export async function invokeArkCompletion({
   messages: ArkMessage[];
   maxTokens: number;
   thinkingMode?: "disabled" | "enabled";
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  timeoutMs?: number;
   signal?: AbortSignal;
   environment?: ArkEnvironment;
 }): Promise<ArkCompletionResult> {
@@ -127,7 +131,10 @@ export async function invokeArkCompletion({
   const timeoutController = new AbortController();
   const relayAbort = () => timeoutController.abort();
   signal?.addEventListener("abort", relayAbort, { once: true });
-  const timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS);
+  const requestTimeoutMs = Number.isFinite(timeoutMs) && (timeoutMs ?? 0) > 0
+    ? timeoutMs
+    : REQUEST_TIMEOUT_MS;
+  const timeout = setTimeout(() => timeoutController.abort(), requestTimeoutMs);
   const requestBody: Record<string, unknown> = {
     model,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -135,6 +142,7 @@ export async function invokeArkCompletion({
     max_tokens: maxTokens,
   };
   if (thinkingMode) requestBody.thinking = { type: thinkingMode };
+  if (reasoningEffort) requestBody.reasoning_effort = reasoningEffort;
   const startedAt = Date.now();
 
   try {

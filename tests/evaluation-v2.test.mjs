@@ -233,6 +233,36 @@ test("Ark 缺少密钥或模型时抛出配置错误且不发送网络请求", a
   }
 });
 
+test("Ark 调用仅在明确指定时把推理强度传给模型服务", async () => {
+  const originalFetch = globalThis.fetch;
+  let receivedBody;
+  globalThis.fetch = async (_input, init) => {
+    receivedBody = JSON.parse(String(init.body));
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: "可执行的行程" } }],
+        usage: { prompt_tokens: 80, completion_tokens: 40, total_tokens: 120 },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    await invokeArkCompletion({
+      model: "reasoning-model",
+      systemPrompt: "只用中文回答。",
+      messages: [{ role: "user", content: "规划周末行程。" }],
+      maxTokens: 600,
+      reasoningEffort: "medium",
+      environment: { ARK_API_KEY: "test-key", ARK_BASE_URL: "https://example.test/api/v3/responses" },
+    });
+    assert.equal(receivedBody.max_tokens, 600);
+    assert.equal(receivedBody.reasoning_effort, "medium");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("强推理档沿用正式对话的兼容调用方式，不强制传入深度思考开关", async () => {
   let receivedThinkingMode = "not-called";
   const result = await runEvaluationTrial({
@@ -271,6 +301,48 @@ test("强推理档沿用正式对话的兼容调用方式，不强制传入深�
 
   assert.equal(result.status, "completed");
   assert.equal(receivedThinkingMode, undefined);
+});
+
+test("评测中的强推理档以中等推理强度、较短输出和 60 秒时限运行", async () => {
+  let receivedRequest;
+  const result = await runEvaluationTrial({
+    datasetVersion: "2.0.0",
+    caseId: "RS-V2-TEST-REASONING-EFFICIENCY",
+    variant: "all_pro",
+    trial: 1,
+    budgetRemainingCny: 1,
+    task: {
+      case_id: "RS-V2-TEST-REASONING-EFFICIENCY",
+      category: "constrained_planning",
+      split: "development",
+      user_query: "为带父母的周末行程做多约束规划。",
+      expected_route: { required_strategies: ["answer"], minimum_model_tier: "reasoning" },
+      hard_constraints: ["预算有限"],
+      critical_assertions: ["给出可执行建议"],
+      quality_assertions: ["解释取舍"],
+      prohibited_behaviors: ["编造实时价格"],
+    },
+    dependencies: {
+      invoke: async (input) => {
+        receivedRequest = input;
+        return {
+          answer: "建议安排低强度、预算可控的两日行程。",
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+          httpStatus: 200,
+          latencyMs: 20,
+          providerMetadata: {},
+        };
+      },
+      modelForTier: () => "reasoning-model",
+    },
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(receivedRequest.maxTokens, 600);
+  assert.equal(receivedRequest.timeoutMs, 60_000);
+  assert.equal(receivedRequest.reasoningEffort, "medium");
 });
 
 test("模型调用失败时记录脱敏诊断信息，且不写入供应商原始错误文本", async () => {

@@ -68,6 +68,8 @@ type TrialDependencies = {
     messages: Array<{ role: "user" | "assistant"; content: string }>;
     maxTokens: number;
     thinkingMode?: "disabled" | "enabled";
+    reasoningEffort?: "minimal" | "low" | "medium" | "high";
+    timeoutMs?: number;
   }) => Promise<ArkCompletionResult>;
   modelForTier?: (tier: EvaluationModelTier) => string | null;
   check?: (input: {
@@ -89,6 +91,11 @@ const TIER_RANK: Record<EvaluationModelTier, number> = {
   general: 2,
   reasoning: 3,
 };
+
+// 评测只验证约束是否满足，不需要生成完整长文；限制输出可缩短等待并控制成本。
+const EVALUATION_MAX_TOKENS = 600;
+// 强推理档会先完成内部推演，评测比用户前台多给 15 秒，避免 45 秒误判。
+const REASONING_EVALUATION_TIMEOUT_MS = 60_000;
 
 function checkAnswer({ task, tier, strategies }: Parameters<NonNullable<TrialDependencies["check"]>>[0]): EvaluationScore {
   const missingStrategies = task.expected_route.required_strategies.filter(
@@ -199,12 +206,13 @@ export async function runEvaluationTrial({
           toolResult: task.context?.tool_fixture,
         }),
         messages,
-        maxTokens: 1_200,
-        // 修复原因：开发集校准显示强推理档在显式传入 `thinking: enabled`
-        // 时无法返回结果，而正式对话已验证为省略该字段。
-        // 修改目的：让评测与用户实际使用的调用方式一致，避免把接口兼容性
-        // 问题误判成模型能力或路由质量问题。
+        maxTokens: EVALUATION_MAX_TOKENS,
+        // 兼容性对齐：评测沿用正式对话的调用方式，不强制传入深度思考开关。
+        // 目的：避免评测与用户实际使用的接口参数不一致，干扰能力对照结论。
         thinkingMode: tier === "reasoning" ? undefined : "disabled",
+        // 评测强推理档以中等强度完成约束规划：保留推理能力，同时避免默认高强度带来的过长等待。
+        reasoningEffort: tier === "reasoning" ? "medium" : undefined,
+        timeoutMs: tier === "reasoning" ? REASONING_EVALUATION_TIMEOUT_MS : undefined,
       });
       const score = check({
         task,
