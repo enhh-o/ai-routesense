@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import {
   aggregateEvaluationRuns,
+  aggregateEvaluationRunsByVariant,
   buildIssueEvidence,
   calculateModelCost,
   nextUpgradeTier,
@@ -89,6 +90,31 @@ test("缺少预期试次时不展示不完整的成功率", () => {
   assert.equal(summary.completedCount, 1);
   assert.deepEqual(summary.missingRunKeys, ["RS-V2-C1-D01:dynamic:2"]);
   assert.equal(summary.metrics.taskSuccessRate, null);
+});
+
+test("四种策略分别聚合，未完成的策略不影响其他策略的证据状态", () => {
+  const summaries = aggregateEvaluationRunsByVariant({
+    caseIds: ["RS-V2-C1-D01"],
+    variants: ["all_mini", "dynamic"],
+    trialsPerVariant: 1,
+    runs: [
+      {
+        id: "mini-complete",
+        caseId: "RS-V2-C1-D01",
+        variant: "all_mini",
+        trial: 1,
+        status: "completed",
+        score: { passed: true, qualityScore: 0.9, failureTags: [] },
+        costCny: 0.0024,
+        latencyMs: 900,
+      },
+    ],
+  });
+
+  assert.equal(summaries.all_mini.isComplete, true);
+  assert.equal(summaries.all_mini.metrics.taskSuccessRate, 1);
+  assert.equal(summaries.dynamic.isComplete, false);
+  assert.equal(summaries.dynamic.metrics.taskSuccessRate, null);
 });
 
 test("问题证据只汇总实际运行中的失败标签和人工复核结论", () => {

@@ -11,12 +11,16 @@ import {
   type EvaluationTaskCard,
   type EvaluationTrialResult,
 } from "../../../lib/evaluation-runner";
-import { aggregateEvaluationRuns } from "../../../lib/evaluation-score";
+import {
+  aggregateEvaluationRuns,
+  aggregateEvaluationRunsByVariant,
+} from "../../../lib/evaluation-score";
 import type { EvaluationRun, EvaluationVariant } from "../../../lib/evaluation-types";
 
 export const runtime = "edge";
 
 const tasks = taskDataset.tasks as EvaluationTaskCard[];
+const variants: EvaluationVariant[] = ["all_mini", "all_lite", "all_pro", "dynamic"];
 
 function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
@@ -86,13 +90,20 @@ export async function GET(request: Request) {
       .map((task) => task.case_id);
     const summary = aggregateEvaluationRuns({
       caseIds: expectedCaseIds,
-      variants: ["all_mini", "all_lite", "all_pro", "dynamic"],
+      variants,
+      trialsPerVariant: 3,
+      runs: records.map(toSummaryRun),
+    });
+    const summaries = aggregateEvaluationRunsByVariant({
+      caseIds: expectedCaseIds,
+      variants,
       trialsPerVariant: 3,
       runs: records.map(toSummaryRun),
     });
     return Response.json({
       datasetVersion,
       summary,
+      summaries,
       runs: records.map((record) => ({
         id: record.id,
         caseId: record.caseId,
@@ -104,6 +115,7 @@ export async function GET(request: Request) {
         finalTier: record.finalTier,
         score: parseJson(record.deterministicScoreJson, null),
         failureTags: parseJson(record.failureTagsJson, [] as string[]),
+        humanReview: parseJson(record.humanReviewJson, null),
         costCny: record.costCny,
         latencyMs: record.latencyMs,
         createdAt: record.createdAt,

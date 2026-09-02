@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  buildExperimentCsv,
   DEFAULT_SETTINGS,
-  EXPERIMENT_SUMMARIES,
   LABEL_TEXT,
   PRESETS,
   routeQuery,
@@ -95,6 +93,54 @@ interface RunRecord {
   feedback?: Feedback | null;
   feedbackUpdatedAt?: string | null;
 }
+
+type EvaluationVariant = "all_mini" | "all_lite" | "all_pro" | "dynamic";
+
+interface EvaluationEvidenceSummary {
+  isComplete: boolean;
+  completedCount: number;
+  expectedCount: number;
+  missingRunKeys: string[];
+  metrics: {
+    taskSuccessRate: number | null;
+    averageCostCny: number | null;
+    costPerSuccessfulTaskCny: number | null;
+    p50LatencyMs: number | null;
+    p95LatencyMs: number | null;
+    upgradeRate: number | null;
+  };
+}
+
+interface EvaluationEvidenceRun {
+  id: string;
+  caseId: string;
+  split: "development" | "holdout";
+  category: string;
+  variant: EvaluationVariant;
+  trial: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  failureTags: string[];
+  createdAt: string;
+  completedAt: string | null;
+  humanReview?: {
+    reviewer?: string;
+    notes?: string;
+  } | null;
+}
+
+interface EvaluationEvidenceResponse {
+  datasetVersion: string;
+  summary: EvaluationEvidenceSummary;
+  summaries?: Partial<Record<EvaluationVariant, EvaluationEvidenceSummary>>;
+  runs: EvaluationEvidenceRun[];
+}
+
+const EVALUATION_VARIANTS: Array<{ key: EvaluationVariant; label: string; note: string }> = [
+  { key: "all_mini", label: "全 Mini", note: "所有任务固定使用 Mini" },
+  { key: "all_lite", label: "全 Lite", note: "所有任务固定使用 Lite" },
+  { key: "all_pro", label: "全 Pro", note: "所有任务固定使用 Pro" },
+  { key: "dynamic", label: "动态路由", note: "Mini → Lite → Pro，最多升级两次" },
+];
 
 const defaultQuery = PRESETS[0].query;
 const initialDecision = routeQuery(defaultQuery, DEFAULT_SETTINGS);
@@ -1408,64 +1454,16 @@ function AssistantMessageContent({ content }: { content: string }) {
   );
 }
 
-const scenarioRows = [
-  {
-    type: "模糊探索",
-    tier: "小模型 78%",
-    strategy: "澄清",
-    success: "91%",
-    issue: "过度澄清 3 例",
-  },
-  {
-    type: "历史偏好",
-    tier: "通用模型 72%",
-    strategy: "记忆检索",
-    success: "93%",
-    issue: "记忆不足 2 例",
-  },
-  {
-    type: "实时比较",
-    tier: "通用模型 61%",
-    strategy: "搜索 / 工具",
-    success: "90%",
-    issue: "数据冲突 4 例",
-  },
-  {
-    type: "多约束决策",
-    tier: "强推理 84%",
-    strategy: "搜索 / 规划",
-    success: "94%",
-    issue: "遗漏约束 2 例",
-  },
-];
-
-const failureCases = [
-  {
-    id: "旅行案例-037",
-    label: "遗漏硬约束",
-    detail: "通用模型遗漏“减少步行”，已升级强推理模型并挽回。",
-    status: "已恢复",
-  },
-  {
-    id: "旅行案例-052",
-    label: "工具数据冲突",
-    detail: "两处景点开放时间不一致，系统停止生成并要求来源复核。",
-    status: "待复核",
-  },
-  {
-    id: "旅行案例-089",
-    label: "无效澄清",
-    detail: "用户已给出预算，规则仍重复询问预算，已加入误路由集。",
-    status: "已入集",
-  },
-];
-
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
+function formatEvidencePercent(value: number | null) {
+  return value === null ? "—" : `${Math.round(value * 100)}%`;
 }
 
-function formatCost(value: number) {
-  return `¥${value.toFixed(3)}`;
+function formatEvidenceCost(value: number | null) {
+  return value === null ? "—" : `¥${value.toFixed(4)}`;
+}
+
+function formatEvidenceLatency(value: number | null) {
+  return value === null ? "—" : `${(value / 1_000).toFixed(1)} 秒`;
 }
 
 function formatRuleVersion(value: string) {
@@ -1597,25 +1595,33 @@ export function RouteSenseApp() {
     latencyMs: number | null;
     attempts: number;
   } | null>(null);
-  const [experimentState, setExperimentState] = useState<
-    "ready" | "running" | "complete"
-  >("complete");
-
-  const costSaving = useMemo(() => {
-    const dynamic = EXPERIMENT_SUMMARIES.find((item) => item.group === "dynamic")!;
-    const strong = EXPERIMENT_SUMMARIES.find(
-      (item) => item.group === "all_reasoning",
-    )!;
-    return Math.round(
-      (1 - dynamic.costPerSuccess / strong.costPerSuccess) * 100,
-    );
-  }, []);
+  const [evaluationEvidence, setEvaluationEvidence] =
+    useState<EvaluationEvidenceResponse | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState("");
 
   const hasConversation = messages.some(
     (message) => message.id !== welcomeMessage.id,
   );
   const preferenceTags = useMemo(() => buildPreferenceTags(messages), [messages]);
   const currentTripTags = useMemo(() => buildCurrentTripTags(messages), [messages]);
+  const evaluationIssues = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { count: number; runs: EvaluationEvidenceRun[] }
+    >();
+    for (const run of evaluationEvidence?.runs ?? []) {
+      for (const issue of run.failureTags) {
+        const entry = grouped.get(issue) ?? { count: 0, runs: [] };
+        entry.count += 1;
+        entry.runs.push(run);
+        grouped.set(issue, entry);
+      }
+    }
+    return [...grouped.entries()]
+      .map(([issue, value]) => ({ issue, ...value }))
+      .sort((left, right) => right.count - left.count || left.issue.localeCompare(right.issue));
+  }, [evaluationEvidence]);
   const latestUserQuery = [...messages]
     .reverse()
     .find((message) => message.role === "user")?.content ?? "";
@@ -1632,6 +1638,10 @@ export function RouteSenseApp() {
     supplementPrompt !== null ||
     destinationOpen ||
     tripSetupPrompt !== null;
+  const evaluationSummary = evaluationEvidence?.summary;
+  const evaluationProgress = evaluationSummary
+    ? `${evaluationSummary.completedCount}/${evaluationSummary.expectedCount}`
+    : "0/504";
 
   useEffect(() => {
     const origin = supplementForm.origin.trim();
@@ -1739,9 +1749,39 @@ export function RouteSenseApp() {
     }
   }
 
+  async function loadEvaluationEvidence() {
+    setEvaluationLoading(true);
+    setEvaluationError("");
+    try {
+      const response = await fetch("/api/evaluations?datasetVersion=2.0.0", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as EvaluationEvidenceResponse & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error || "评测记录暂时无法读取。");
+      }
+      setEvaluationEvidence(result);
+    } catch (error) {
+      setEvaluationEvidence(null);
+      setEvaluationError(
+        error instanceof Error ? error.message : "评测记录暂时无法读取。",
+      );
+    } finally {
+      setEvaluationLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (tab !== "runs") return;
     const timeoutId = window.setTimeout(() => void loadRuns(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "evaluation") return;
+    const timeoutId = window.setTimeout(() => void loadEvaluationEvidence(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [tab]);
 
@@ -2276,20 +2316,6 @@ export function RouteSenseApp() {
     } catch {
       setFeedbackSaveState("error");
     }
-  }
-
-  function runExperiment() {
-    if (experimentState === "running") return;
-    setExperimentState("running");
-    window.setTimeout(() => setExperimentState("complete"), 850);
-  }
-
-  function exportExperiment() {
-    downloadText(
-      "routesense_experiment_v1.csv",
-      buildExperimentCsv(),
-      "text/csv",
-    );
   }
 
   function exportRouteLog() {
@@ -3643,59 +3669,63 @@ export function RouteSenseApp() {
           <div className="workspace-heading">
             <div>
               <p className="eyebrow">离线评估中心</p>
-              <h1>同一批任务，比较三种策略。</h1>
+              <h1>同一批任务，比较四种策略。</h1>
               <p>
-                100 条合成旅游评估集使用相同工具数据和成功标准；结果不预设动态路由一定获胜。
+                使用同一批独立正式集、相同成功标准和三次重复运行，比较全 Mini、全 Lite、全 Pro 与动态路由。未完成的策略不会提前显示成功率、成本或延迟。
               </p>
             </div>
             <div className="heading-actions">
-              <button className="secondary-button" onClick={exportExperiment}>
-                导出 300 条原始结果
-              </button>
               <button
-                className="primary-button"
-                onClick={runExperiment}
-                disabled={experimentState === "running"}
+                className="secondary-button"
+                onClick={() => void loadEvaluationEvidence()}
+                disabled={evaluationLoading}
               >
-                {experimentState === "running" ? "正在运行…" : "重新运行实验"}
+                {evaluationLoading ? "正在读取…" : "刷新证据"}
               </button>
             </div>
           </div>
 
           <div className="data-provenance">
-            <span>数据口径</span>
+            <span>实验状态与证据说明</span>
             <p>
-              100 条合成任务 × 3 个策略组 · 规则版本 {settings.version} ·
-              人工标准为主，模型辅助评分为辅
+              {evaluationError
+                ? `记录服务暂时不可用：${evaluationError}`
+                : evaluationSummary
+                  ? `已记录 ${evaluationProgress} 次正式运行；只有某一策略的全部预期试次完成后，才会显示该策略的指标。`
+                  : "正在读取已保存的评测记录；不会在此页面自动调用模型或产生费用。"}
             </p>
             <strong>
-              {experimentState === "running" ? "计算中" : "最近一次：已完成"}
+              {evaluationLoading
+                ? "读取中"
+                : evaluationSummary?.isComplete
+                  ? "证据完整"
+                  : "样本不足，暂不下结论"}
             </strong>
           </div>
 
           <div className="metric-grid">
             <MetricCard
-              label="动态路由成功率"
-              value="92%"
-              note="全强模型为 95%"
+              label="已完成运行"
+              value={evaluationProgress}
+              note="正式集：42 条任务 × 4 种策略 × 3 次试运行"
               tone="mint"
             />
             <MetricCard
-              label="单次成功任务成本"
-              value="¥0.029"
-              note="全强模型为 ¥0.052"
+              label="当前结论状态"
+              value={evaluationSummary?.isComplete ? "可比较" : "样本不足"}
+              note="不使用局部样本宣称策略优劣"
               tone="blue"
             />
             <MetricCard
-              label="相对全强成本节省"
-              value={`${costSaving}%`}
-              note="以成功任务为分母"
+              label="正式集版本"
+              value={evaluationEvidence?.datasetVersion ?? "V2.0.0"}
+              note="开发集用于校准；正式集用于独立对照"
               tone="orange"
             />
             <MetricCard
-              label="升级后任务挽回率"
-              value="81%"
-              note="升级率 11%"
+              label="动态路由上限"
+              value="2 次升级"
+              note="Mini → Lite → Pro，超过后转人工或安全提示"
               tone="violet"
             />
           </div>
@@ -3705,60 +3735,44 @@ export function RouteSenseApp() {
               <div className="panel-heading">
                 <div>
                   <p className="panel-kicker">核心对照</p>
-                  <h2>质量、成本与延迟</h2>
+                  <h2>四种策略的质量、成本与延迟</h2>
                 </div>
-                <span className="sample-chip">每组 100 条</span>
+                <span className="sample-chip">每策略 126 次</span>
               </div>
               <div className="experiment-table">
                 <div className="experiment-header">
                   <span>策略组</span>
+                  <span>完成情况</span>
                   <span>任务成功率</span>
                   <span>单次成功成本</span>
                   <span>95 分位延迟</span>
                 </div>
-                {EXPERIMENT_SUMMARIES.map((item) => (
+                {EVALUATION_VARIANTS.map((variant) => {
+                  const summary = evaluationEvidence?.summaries?.[variant.key];
+                  const ready = summary?.isComplete === true;
+                  return (
                   <div
-                    className={`experiment-row ${
-                      item.group === "dynamic" ? "highlight" : ""
-                    }`}
-                    key={item.group}
+                    className={`experiment-row ${variant.key === "dynamic" ? "highlight" : ""}`}
+                    key={variant.key}
                   >
                     <div>
-                      <strong>{item.label}</strong>
-                      <small>
-                        {item.group === "dynamic"
-                          ? "按请求选择策略与档位"
-                          : item.group === "all_small"
-                            ? "固定低成本，不升级"
-                            : "固定强推理模型"}
-                      </small>
+                      <strong>{variant.label}</strong>
+                      <small>{variant.note}</small>
                     </div>
-                    <BarValue
-                      value={item.successRate * 100}
-                      max={100}
-                      label={formatPercent(item.successRate)}
-                      tone={item.group}
-                    />
-                    <BarValue
-                      value={item.costPerSuccess}
-                      max={0.06}
-                      label={formatCost(item.costPerSuccess)}
-                      tone={item.group}
-                    />
-                    <BarValue
-                      value={item.p95Latency}
-                      max={7}
-                      label={`${item.p95Latency.toFixed(1)} 秒`}
-                      tone={item.group}
-                    />
+                    <span>{summary ? `${summary.completedCount}/${summary.expectedCount}` : "0/126"}</span>
+                    <span>{ready ? formatEvidencePercent(summary.metrics.taskSuccessRate) : "—"}</span>
+                    <span>{ready ? formatEvidenceCost(summary.metrics.costPerSuccessfulTaskCny) : "—"}</span>
+                    <span>{ready ? formatEvidenceLatency(summary.metrics.p95LatencyMs) : "—"}</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="finding-callout">
-                <span>实验结论</span>
+                <span>证据结论</span>
                 <p>
-                  动态路由用 3 个百分点的成功率差，换取相对全强模型约{" "}
-                  {costSaving}% 的单次成功任务成本下降；主要失败集中在实时数据冲突和无效澄清。
+                  {evaluationSummary?.isComplete
+                    ? "所有预期试次已完成。可据此比较策略的成功率、成本与延迟，并回看具体问题案例。"
+                    : "样本不足，暂不下结论。先完成并人工复核预设试次，再基于真实记录讨论质量、成本和速度。"}
                 </p>
               </div>
             </div>
@@ -3766,31 +3780,30 @@ export function RouteSenseApp() {
             <div className="panel asset-panel">
               <div className="panel-heading compact">
                 <div>
-                  <p className="panel-kicker">资产复用</p>
-                <h2>原 AgentScope 智能体评测</h2>
+                  <p className="panel-kicker">评测设计</p>
+                  <h2>为什么比较这四种策略</h2>
                 </div>
-                <span className="asset-status">已保留</span>
+                <span className="asset-status">固定口径</span>
               </div>
               <p className="asset-copy">
-                原有的证据核验、痛点覆盖、合并/拆分、新发现与严重程度比较，不再是产品终点，而是模型和提示词
-                回归评测资产。
+                三种固定档位用来观察“能力越强，质量、费用与耗时如何变化”；动态路由组用来验证按任务难度逐级升级是否更划算。
               </p>
               <div className="asset-list">
                 <div>
-                  <span>证据与结构</span>
-                  <strong>规则自动验收</strong>
+                  <span>对照对象</span>
+                  <strong>全 Mini / 全 Lite / 全 Pro / 动态路由</strong>
                 </div>
                 <div>
-                  <span>严重程度 1–5</span>
-                  <strong>单独保留，不等同请求风险</strong>
+                  <span>成功标准</span>
+                  <strong>硬约束、可执行性与安全要求</strong>
                 </div>
                 <div>
-                  <span>人工复核</span>
-                  <strong>合并 / 拆分 / 新发现</strong>
+                  <span>重复次数</span>
+                  <strong>每条正式任务每种策略运行 3 次</strong>
                 </div>
               </div>
               <p className="asset-note">
-                请求风险决定路由安全门槛；痛点严重程度评价分析结果。两个指标分开计算，避免概念混用。
+                只有全部预期试次完成后才计算指标，避免一次偶然成功或失败影响结论。
               </p>
             </div>
           </div>
@@ -3798,50 +3811,43 @@ export function RouteSenseApp() {
           <div className="panel scenario-panel">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">分层诊断</p>
-                <h2>不同任务类型的路由表现</h2>
+                <p className="panel-kicker">可追溯证据</p>
+                <h2>问题案例与纠正记录</h2>
               </div>
-              <span className="sample-chip">动态路由组</span>
-            </div>
-            <div className="scenario-table">
-              <div className="scenario-header">
-                <span>任务类型</span>
-                <span>主要模型分布</span>
-                <span>主要策略</span>
-                <span>成功率</span>
-                <span>主要问题</span>
-              </div>
-              {scenarioRows.map((row) => (
-                <div className="scenario-row" key={row.type}>
-                  <strong>{row.type}</strong>
-                  <span>{row.tier}</span>
-                  <span>{row.strategy}</span>
-                  <span className="success-value">{row.success}</span>
-                  <span>{row.issue}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel failure-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="panel-kicker">失败不是脏数据</p>
-                <h2>误路由与升级案例</h2>
-              </div>
-              <span className="sample-chip">可追溯到单条日志</span>
+              <span className="sample-chip">可展开查看</span>
             </div>
             <div className="failure-grid">
-              {failureCases.map((item) => (
-                <article key={item.id}>
+              {evaluationIssues.length ? (
+                evaluationIssues.map((item) => (
+                  <article key={item.issue}>
+                    <div>
+                      <span>{item.issue}</span>
+                      <strong>{item.count} 条</strong>
+                    </div>
+                    <h3>已记录的问题类型</h3>
+                    <details>
+                      <summary>查看对应运行记录</summary>
+                      <ul>
+                        {item.runs.map((run) => (
+                          <li key={run.id}>
+                            {run.caseId} · {run.variant} · 第 {run.trial} 次 · {run.status}
+                            {run.humanReview?.notes ? ` · 人工备注：${run.humanReview.notes}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </article>
+                ))
+              ) : (
+                <article>
                   <div>
-                    <span>{item.id}</span>
-                    <strong>{item.status}</strong>
+                    <span>案例状态</span>
+                    <strong>等待运行</strong>
                   </div>
-                  <h3>{item.label}</h3>
-                  <p>{item.detail}</p>
+                  <h3>尚无已运行案例</h3>
+                  <p>完成评测后，这里会汇总真实失败标签、对应运行编号和人工纠正备注。</p>
                 </article>
-              ))}
+              )}
             </div>
           </div>
         </section>
@@ -3852,9 +3858,9 @@ export function RouteSenseApp() {
           <div className="workspace-heading">
             <div>
               <p className="eyebrow">路由控制台</p>
-              <h1>模型不写死，门槛可解释。</h1>
+              <h1>评测驱动，让策略持续校准。</h1>
               <p>
-                调整模型映射、置信度与质量门槛。规则只用于当前演示版，可由离线评估结果持续校准。
+                将正式评测结果、问题案例和人工复核转化为可追溯的路由策略；在证据完整前，规则只作为待验证的初始假设。
               </p>
             </div>
             <div className="heading-actions">
@@ -3897,14 +3903,12 @@ export function RouteSenseApp() {
             <div className="panel rules-panel">
               <div className="panel-heading">
                 <div>
-                  <p className="panel-kicker">模型映射</p>
+                  <p className="panel-kicker">能力档位</p>
                   <h2>三个逻辑档位</h2>
                 </div>
-                <span className="sample-chip">供应商可替换</span>
               </div>
               <p className="config-note">
-                这里修改的是中文显示名；真正调用的模型标识由服务器中的
-                ARK_MODEL_SMALL、ARK_MODEL_GENERAL 和 ARK_MODEL_REASONING 决定。
+                小、通用与强推理三档能力，分别对应简单咨询、常规规划与多约束决策。评测会验证各档位在不同任务中的质量、费用与响应速度。
               </p>
               {(["small", "general", "reasoning"] as ModelTier[]).map(
                 (tier) => (
@@ -4026,10 +4030,10 @@ export function RouteSenseApp() {
           <div className="panel rulebook">
             <div className="panel-heading">
               <div>
-                <p className="panel-kicker">首版规则字典</p>
-                <h2>条件 → 策略 → 模型档位</h2>
+                <p className="panel-kicker">初始假设</p>
+                <h2>评测反馈驱动的路由策略</h2>
               </div>
-              <span className="sample-chip">6 条启用</span>
+              <span className="sample-chip">6 条待验证</span>
             </div>
             <div className="rule-grid">
               <RuleCard
@@ -4418,28 +4422,6 @@ function MetricCard({
       <strong>{value}</strong>
       <small>{note}</small>
     </article>
-  );
-}
-
-function BarValue({
-  value,
-  max,
-  label,
-  tone,
-}: {
-  value: number;
-  max: number;
-  label: string;
-  tone: string;
-}) {
-  const width = Math.max(5, Math.min(100, (value / max) * 100));
-  return (
-    <div className="bar-value">
-      <strong>{label}</strong>
-      <span>
-        <i className={tone} style={{ width: `${width}%` }} />
-      </span>
-    </div>
   );
 }
 

@@ -140,6 +140,30 @@ export function aggregateEvaluationRuns({
   };
 }
 
+export function aggregateEvaluationRunsByVariant({
+  caseIds,
+  variants,
+  trialsPerVariant,
+  runs,
+}: {
+  caseIds: string[];
+  variants: EvaluationVariant[];
+  trialsPerVariant: number;
+  runs: EvaluationRun[];
+}): Record<EvaluationVariant, EvaluationSummary> {
+  return Object.fromEntries(
+    variants.map((variant) => [
+      variant,
+      aggregateEvaluationRuns({
+        caseIds,
+        variants: [variant],
+        trialsPerVariant,
+        runs,
+      }),
+    ]),
+  ) as Record<EvaluationVariant, EvaluationSummary>;
+}
+
 export function buildIssueEvidence(runs: EvaluationRun[]): IssueEvidence[] {
   const issues = new Map<string, IssueEvidence>();
   for (const run of runs) {

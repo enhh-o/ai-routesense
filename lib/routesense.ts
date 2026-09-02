@@ -110,18 +110,6 @@ export interface RouteDecision {
   }>;
 }
 
-export interface ExperimentSummary {
-  group: "all_small" | "dynamic" | "all_reasoning";
-  label: string;
-  successRate: number;
-  constraintRate: number;
-  averageCost: number;
-  costPerSuccess: number;
-  p50Latency: number;
-  p95Latency: number;
-  upgradeRate: number;
-}
-
 export const DEFAULT_SETTINGS: RouterSettings = {
   confidenceThreshold: 0.68,
   qualityThreshold: 0.78,
@@ -757,98 +745,4 @@ export function routeQuery(
     response: chooseResponse(query, strategies, labels, upgraded),
     trace,
   };
-}
-
-export const EXPERIMENT_SUMMARIES: ExperimentSummary[] = [
-  {
-    group: "all_small",
-    label: "全小模型",
-    successRate: 0.68,
-    constraintRate: 0.72,
-    averageCost: 0.006,
-    costPerSuccess: 0.009,
-    p50Latency: 0.8,
-    p95Latency: 1.6,
-    upgradeRate: 0,
-  },
-  {
-    group: "dynamic",
-    label: "动态路由",
-    successRate: 0.92,
-    constraintRate: 0.94,
-    averageCost: 0.027,
-    costPerSuccess: 0.029,
-    p50Latency: 2.1,
-    p95Latency: 4.3,
-    upgradeRate: 0.11,
-  },
-  {
-    group: "all_reasoning",
-    label: "全强模型",
-    successRate: 0.95,
-    constraintRate: 0.96,
-    averageCost: 0.049,
-    costPerSuccess: 0.052,
-    p50Latency: 3.7,
-    p95Latency: 6.8,
-    upgradeRate: 0,
-  },
-];
-
-const EVALUATION_QUERIES = [
-  "我不知道该去哪里玩",
-  "周末从上海出发，预算两千，想看自然风景",
-  "根据我过去收藏过的地点给我推荐",
-  "比较大阪和福冈哪个更适合慢旅行",
-  "下周杭州天气怎样，西湖附近酒店还有房吗",
-  "国庆带父母去日本七天，预算两万，不要走太多路",
-  "帮我查北京到成都的航班并给出三日安排",
-  "东京和关西两个行程哪个更适合老人",
-  "我刚才说的两个目的地再按美食偏好比较",
-  "护照在境外丢了，现在应该怎么办",
-];
-
-export function buildExperimentCsv() {
-  const headers = [
-    "case_id",
-    "query",
-    "strategy_group",
-    "task_success",
-    "constraint_satisfaction",
-    "estimated_cost_cny",
-    "latency_ms",
-    "upgraded",
-    "rule_version",
-  ];
-  const rows = [headers.join(",")];
-
-  for (let index = 0; index < 100; index += 1) {
-    const query = EVALUATION_QUERIES[index % EVALUATION_QUERIES.length];
-    for (const summary of EXPERIMENT_SUMMARIES) {
-      const successCutoff = Math.round(summary.successRate * 100);
-      const success = (index * 17 + summary.label.length) % 100 < successCutoff;
-      const constraint = success
-        ? summary.constraintRate
-        : Math.max(0.35, summary.constraintRate - 0.28);
-      const costJitter = 1 + ((index % 7) - 3) * 0.025;
-      const latencyJitter = 1 + ((index % 9) - 4) * 0.04;
-      const upgraded =
-        summary.group === "dynamic" && index % 9 === 0 ? "true" : "false";
-      rows.push(
-        [
-          `travel_${String(index + 1).padStart(3, "0")}`,
-          `"${query.replaceAll('"', '""')}"`,
-          summary.group,
-          success ? "true" : "false",
-          constraint.toFixed(2),
-          (summary.averageCost * costJitter).toFixed(4),
-          Math.round(summary.p50Latency * 1000 * latencyJitter),
-          upgraded,
-          DEFAULT_SETTINGS.version,
-        ].join(","),
-      );
-    }
-  }
-
-  return rows.join("\n");
 }
