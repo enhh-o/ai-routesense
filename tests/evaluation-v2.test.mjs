@@ -232,6 +232,46 @@ test("Ark 缺少密钥或模型时抛出配置错误且不发送网络请求", a
   }
 });
 
+test("强推理档沿用正式对话的兼容调用方式，不强制传入深度思考开关", async () => {
+  let receivedThinkingMode = "not-called";
+  const result = await runEvaluationTrial({
+    datasetVersion: "2.0.0",
+    caseId: "RS-V2-TEST-REASONING-COMPATIBILITY",
+    variant: "all_pro",
+    trial: 1,
+    budgetRemainingCny: 1,
+    task: {
+      case_id: "RS-V2-TEST-REASONING-COMPATIBILITY",
+      category: "constrained_planning",
+      split: "development",
+      user_query: "为带父母的周末行程做多约束规划。",
+      expected_route: { required_strategies: ["answer"], minimum_model_tier: "reasoning" },
+      hard_constraints: ["预算有限"],
+      critical_assertions: ["给出可执行建议"],
+      quality_assertions: ["解释取舍"],
+      prohibited_behaviors: ["编造实时价格"],
+    },
+    dependencies: {
+      invoke: async ({ thinkingMode }) => {
+        receivedThinkingMode = thinkingMode;
+        return {
+          answer: "建议安排低强度、预算可控的两日行程。",
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+          httpStatus: 200,
+          latencyMs: 20,
+          providerMetadata: {},
+        };
+      },
+      modelForTier: () => "reasoning-model",
+    },
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(receivedThinkingMode, undefined);
+});
+
 test("动态路由按失败原因逐级升级两次，固定策略只执行指定模型一次", async () => {
   const calls = [];
   const task = {

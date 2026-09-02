@@ -66,7 +66,7 @@ type TrialDependencies = {
     systemPrompt: string;
     messages: Array<{ role: "user" | "assistant"; content: string }>;
     maxTokens: number;
-    thinkingMode: "disabled" | "enabled";
+    thinkingMode?: "disabled" | "enabled";
   }) => Promise<ArkCompletionResult>;
   modelForTier?: (tier: EvaluationModelTier) => string | null;
   check?: (input: {
@@ -199,7 +199,11 @@ export async function runEvaluationTrial({
         }),
         messages,
         maxTokens: 1_200,
-        thinkingMode: tier === "reasoning" ? "enabled" : "disabled",
+        // 修复原因：开发集校准显示强推理档在显式传入 `thinking: enabled`
+        // 时无法返回结果，而正式对话已验证为省略该字段。
+        // 修改目的：让评测与用户实际使用的调用方式一致，避免把接口兼容性
+        // 问题误判成模型能力或路由质量问题。
+        thinkingMode: tier === "reasoning" ? undefined : "disabled",
       });
       const score = check({
         task,
