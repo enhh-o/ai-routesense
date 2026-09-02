@@ -58,6 +58,18 @@ test("V2 评测集覆盖七类能力，并固定开发集与独立正式集", as
   assert.equal(report.status, "valid");
 });
 
+test("评测接口从 V2 数据集的 cases 字段读取任务", async () => {
+  const evaluationRoute = await readFile(
+    path.join(projectRoot, "app", "api", "evaluations", "route.ts"),
+    "utf8",
+  );
+
+  assert.match(
+    evaluationRoute,
+    /const tasks = taskDataset\.cases as EvaluationTaskCard\[\];/,
+  );
+});
+
 test("模型费用按输入长度档位和实际输出 Token 计算，动态路由只能逐级升级", () => {
   assert.equal(calculateModelCost("small", 2000, 1000), 0.0024);
   assert.equal(calculateModelCost("general", 2000, 1000), 0.0048);

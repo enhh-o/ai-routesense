@@ -19,7 +19,7 @@ import type { EvaluationRun, EvaluationVariant } from "../../../lib/evaluation-t
 
 export const runtime = "edge";
 
-const tasks = taskDataset.tasks as EvaluationTaskCard[];
+const tasks = taskDataset.cases as EvaluationTaskCard[];
 const variants: EvaluationVariant[] = ["all_mini", "all_lite", "all_pro", "dynamic"];
 
 function parseJson<T>(value: string | null, fallback: T): T {
